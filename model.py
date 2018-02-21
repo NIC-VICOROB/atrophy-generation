@@ -105,7 +105,6 @@ class Multimodel(object):
             out_dict['em_fused'] = embedding_distance
             loss_weights['em_fused'] = 0.0
 
-        #loss_weights['em_0_dec_Gen'] = 2.0
         print 'output dict: ', out_dict
         print 'loss weights: ', loss_weights
 
