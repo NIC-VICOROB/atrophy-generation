@@ -2,7 +2,7 @@ import numpy as np
 
 from keras import backend as K
 from keras.layers import Activation, Dropout, GaussianNoise, Input, Lambda, PReLU
-from keras.layers.convolutional import Conv2D, Conv2DTranspose, MaxPooling2D
+from keras.layers.convolutional import Conv3D, Conv3DTranspose, MaxPooling3D
 from keras.layers.merge import add, concatenate, maximum
 from keras.losses import mae, mse
 from keras.models import Model
@@ -197,25 +197,25 @@ class Multimodel(object):
         name_pattern = '{}_{}_{}{}'
         name_conv = name_pattern.format(task, modality, 'conv', level)
         name_act = name_pattern.format(task, modality, 'act', level)
-        fc = Conv2D(num_filters, kernel_size=(1, 1), name=name_conv)(input)
+        fc = Conv3D(num_filters, kernel_size=(1, 1, 1), name=name_conv)(input)
         return PReLU(name=name_act)(fc)
 
     def get_deconv_layer(self, input, num_filters, modality, task='enc', level=1) :
         name = '{}_{}_{}{}'.format(task, modality, 'dconv', level)
-        return Conv2DTranspose(num_filters, kernel_size=(2, 2), strides=(2, 2), name=name)(input)
+        return Conv3DTranspose(num_filters, kernel_size=(2, 2, 2), strides=(2, 2, 2), name=name)(input)
 
     def get_res_conv_core(self, input, num_filters, modality, task='enc', level=1) :
         name_pattern = '{}_{}_{}{}{}'
         name_a = name_pattern.format(task, modality, 'conv', level, 'a')
         name_b = name_pattern.format(task, modality, 'conv', level, 'b')
-        a = Conv2D(num_filters, kernel_size=(3, 3), padding='same', name=name_a)(input)
-        b = Conv2D(num_filters, kernel_size=(1, 1), padding='same', name=name_b)(input)
+        a = Conv3D(num_filters, kernel_size=(3, 3, 3), padding='same', name=name_a)(input)
+        b = Conv3D(num_filters, kernel_size=(1, 1, 1), padding='same', name=name_b)(input)
         c = add([a, b], name=name_pattern.format(task, modality, 'sum', level, ''))
         return PReLU(name=name_pattern.format(task, modality, 'res', level, ''))(c)
 
     def get_max_pooling_layer(self, input, modality, task='enc', level=1) :
         name = '{}_{}_{}{}'.format(task, modality, 'pool', level)
-        return MaxPooling2D(pool_size=(2, 2), name=name)(input)
+        return MaxPooling3D(pool_size=(2, 2, 2), name=name)(input)
 
     def merge_add(self, input, modality, task='enc', level=1) :
         name_pattern = '{}_{}_{}{}'
