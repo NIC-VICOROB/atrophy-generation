@@ -2,8 +2,9 @@
 
 ## Requirements
 ### Libraries
-The code has been tested with the following configuration
+The pipeline has been implemented under the following configuration
 
+- fsl == 5.0
 - h5py == 2.7.0
 - ipython == 5.3.0
 - jupyter == 1.0.0
