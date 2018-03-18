@@ -4,7 +4,7 @@ import numpy as np
 
 def perform_voting(patches, output_shape, expected_shape, extraction_step) :
     vote_img = np.zeros(expected_shape)
-    vote_count = np.ones(expected_shape)
+    vote_count = np.zeros(expected_shape)
 
     coordinates = generate_indexes(
         output_shape, extraction_step, expected_shape)
