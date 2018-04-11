@@ -1,12 +1,14 @@
 import numpy as np
 
 from keras import backend as K
+from keras.losses import categorical_crossentropy
 from keras.layers import Activation, Dropout, GaussianNoise, Input, Lambda, PReLU
 from keras.layers.convolutional import Conv3D, Conv3DTranspose, MaxPooling3D
 from keras.layers.merge import add, concatenate, maximum
-from keras.losses import mae, mse
 from keras.models import Model
 from keras.optimizers import Adam
+
+from keras.engine import Layer
 
 import tensorflow as tf
 
@@ -14,7 +16,7 @@ K.set_image_dim_ordering('th')
 
 class Multimodel(object):
     def __init__(
-        self, input_modalities, output_modalities, output_weights, latent_dim, channels, patch_shape, scale=1):
+        self, input_modalities, output_modalities, output_weights, latent_dim, channels, patch_shape, to_process, scale=1):
         self.input_modalities = input_modalities
         self.output_modalities = output_modalities
         self.latent_dim = latent_dim
@@ -26,20 +28,15 @@ class Multimodel(object):
         self.fuse_outs = True
         self.num_emb = len(input_modalities) + 1
         self.patch_shape = patch_shape
+        self.to_process = to_process
 
-    def encoder_maker(self, modality, channels=1) :
+    def encoder_maker(self, modality, channels=1, to_process=True) :
         return self.ushape_network_maker(
-            modality, self.scale, channels, self.latent_dim, 'enc', self.patch_shape)
+            modality, self.scale, channels, self.latent_dim, 'enc', self.patch_shape, to_process)
 
-    def decoder_maker(self, modality) :
-        inp = Input(shape=(self.latent_dim, ) + self.patch_shape, name='dec_' + modality + '_input')
-        conv = self.get_res_conv_core(inp, 32, modality, task='dec', level=1)
-        conv = self.get_res_conv_core(conv, 32, modality, task='dec', level=2)
-        skip = concatenate([inp, conv], axis=1, name='dec_' + modality + '_skip1')
-        conv = self.get_res_conv_core(skip, 32, modality, task='dec', level=3)
-        conv = self.get_res_conv_core(conv, 32, modality, task='dec', level=4)
-        skip = concatenate([skip, conv], axis=1, name='dec_' + modality + '_skip2')
-        pred = self.get_conv_fc(skip, 1, modality, task='dec', level=5)
+    def decoder_maker(self, modality, channels=1) :
+        inp, pred = self.ushape_network_maker(
+            modality, self.scale, self.latent_dim, 1, 'dec', self.patch_shape, to_process=True)
         return Model(inputs=[inp], outputs=[pred], name='{}_{}'.format('dec', modality))
 
     def get_embedding_distance_outputs(self, embeddings):
@@ -69,7 +66,7 @@ class Multimodel(object):
     def build(self):
         print 'Latent dimensions: ' + str(self.latent_dim)
 
-        encoders = [self.encoder_maker(m, self.channels[i]) for i, m in enumerate(self.input_modalities)]
+        encoders = [self.encoder_maker(m, self.channels[i], self.to_process[i]) for i, m in enumerate(self.input_modalities)]
 
         ind_emb = [lr for (input, lr) in encoders]
         self.org_ind_emb = [lr for (input, lr) in encoders]
@@ -87,7 +84,7 @@ class Multimodel(object):
 
         print 'all outputs: ', [o.name for o in outputs]
 
-        out_dict = {'em_%d_dec_%s' % (emi, dec): mae for emi in range(self.num_emb) for dec in self.output_modalities}
+        out_dict = {'em_%d_dec_%s' % (emi, dec): adhoc_loss for emi in range(self.num_emb) for dec in self.output_modalities}
 
         get_indiv_weight = lambda mod: self.output_weights[mod] if self.ind_outs else 0.0
         get_fused_weight = lambda mod: self.output_weights[mod] if self.fuse_outs else 0.0
@@ -152,7 +149,7 @@ class Multimodel(object):
         for outi, out in enumerate(outputs):
             out.name = 'em_%d_dec_%s' % (outi, modality)
 
-        out_dict = {decoder.name: mae}
+        out_dict = {decoder.name: adhoc_loss}
         loss_weights = {decoder.name: 1.0}
 
         new_model = Model(inputs=inputs, outputs=outputs)
@@ -189,7 +186,7 @@ class Multimodel(object):
         outputs = get_decoder_outputs(output_modalities, decoders, [lr])
 
         model = Model(input=[input], output=outputs)
-        model.compile(optimizer=Adam(), loss={d.name: mae for d in decoders},
+        model.compile(optimizer=Adam(), loss={d.name: adhoc_loss for d in decoders},
                       loss_weights={d.name: 1.0 for d in decoders})
         return model
 
@@ -223,7 +220,7 @@ class Multimodel(object):
         return PReLU(name=name_pattern.format(task, modality, 'act', level))(merged)
 
     def ushape_network_maker(
-        self, modality, scale, channels, latent_dim, task, patch_shape):
+        self, modality, scale, channels, latent_dim, task, patch_shape, to_process=True):
         input_shape = (channels, ) + patch_shape
         
         inp = Input(shape=input_shape, name='{}_{}_{}{}'.format(task, modality, 'input', ''))
@@ -250,7 +247,7 @@ class Multimodel(object):
         conv7 = self.get_res_conv_core(add22, np.int16(64*scale), modality, task, 7)
         up3 = self.get_deconv_layer(conv7, np.int16(32*scale), modality, task, 7)
 
-        add13 = self.merge_add([conv1, up3], modality, task, 8)
+        add13 = self.merge_add([conv1, up3], modality, task, 8) if to_process == True else inp
 
         pred = self.get_conv_fc(add13, latent_dim, modality, task, 9)
 
@@ -273,7 +270,6 @@ def get_decoder_outputs(output_modalities, decoders, embeddings):
 def embedding_distance(y_true, y_pred):
     return K.var(y_pred, axis=1)
 
-
 def new_flatten(emb, name=''):
     l = Lambda(lambda x: K.batch_flatten(x))(emb)
     l = Lambda(lambda x: K.expand_dims(x, axis=1), name=name)(l)
@@ -289,3 +285,90 @@ def var(embeddings):
     emb_var = K.var(K.concatenate(flat_embs, axis=1), axis=1, keepdims=True)
 
     return K.reshape(emb_var, embeddings[0].shape)
+
+def mae(y_true, y_pred):
+    return K.abs(K.batch_flatten(y_pred - y_true))
+
+def adhoc_loss(y_true, y_pred) :
+    mask = K.cast(K.not_equal(y_true, 0), 'float32')
+    m = mae(y_true, y_pred*mask)
+    cc = categorical_crossentropy(
+        S((y_true - train_mean) / train_std),
+        S((y_pred - train_mean) / train_std))
+    return m + 0.01 * cc
+
+import numpy as np
+
+from keras import backend as K
+from keras.layers import Activation, Input, PReLU, Flatten, Dense, Cropping3D, Dropout
+from keras.layers.convolutional import Conv3D, MaxPooling3D
+from keras.layers.convolutional import Conv3DTranspose as Deconv3D
+from keras.layers.core import Permute, Reshape
+from keras.layers.merge import add, concatenate
+from keras.models import Model
+
+K.set_image_dim_ordering('th')
+
+def generate_uresnet_model(input_shape, output_shape, num_classes=4, scale=1):
+    input = Input(shape=input_shape)
+
+    conv1 = get_res_conv_core(input, np.int32(scale*32))
+    pool1 = get_max_pooling_layer(conv1)
+
+    conv2 = get_res_conv_core(pool1, np.int32(scale*64))
+    pool2 = get_max_pooling_layer(conv2)
+
+    conv3 = get_res_conv_core(pool2, np.int32(scale*128))
+    pool3 = get_max_pooling_layer(conv3)
+
+    conv4 = get_res_conv_core(pool3, np.int32(scale*256))
+    
+    up1 = get_deconv_layer(conv4, np.int32(scale*128))
+    conv5 = get_res_conv_core(up1, np.int32(scale*128))
+
+    add35 = merge_add(conv3, conv5)
+    conv6 = get_res_conv_core(add35, np.int32(scale*128))
+    up2 = get_deconv_layer(conv6, np.int32(scale*64))
+
+    add22 = merge_add(conv2, up2)
+    conv7 = get_res_conv_core(add22, np.int32(scale*64))
+    up3 = get_deconv_layer(conv7, np.int32(scale*32))
+
+    add13 = merge_add(conv1, up3)
+    conv8 = get_res_conv_core(add13, np.int32(scale*32))
+
+    pred = get_conv_fc(conv8)
+    pred = organise_output(pred, output_shape)
+
+    return Model(inputs=[input], outputs=[pred])
+
+def merge_add(a, b) :
+    c = add([a, b])
+    return Activation('relu')(c)
+
+def get_res_conv_core(input, num_filters) :
+    a = Conv3D(num_filters, kernel_size=(3, 3, 3), padding='same')(input)
+    b = Conv3D(num_filters, kernel_size=(1, 1, 1), padding='same')(input)
+    return merge_add(a, b)
+
+def get_max_pooling_layer(input) :
+    return MaxPooling3D(pool_size=(2, 2, 2))(input)
+
+def get_deconv_layer(input, num_filters) :
+    return Deconv3D(num_filters, kernel_size=(2, 2, 2), strides=(2, 2, 2))(input)
+
+def get_conv_fc(input, num_filters=4) :
+    fc = Conv3D(num_filters, kernel_size=(1, 1, 1))(input)
+
+    return Activation('relu')(fc)
+
+def organise_output(input, output_shape) :
+    pred = Reshape((4, 32*32*32))(input)
+    pred = Permute((2, 1))(pred)
+    return Activation('softmax')(pred)
+
+curr_patch_shape = (32, 32, 32)
+S = generate_uresnet_model((1, ) + curr_patch_shape, (np.product(curr_patch_shape), 4))
+S.load_weights('models/ag_segmenter.h5')
+train_mean = 0.23081103
+train_std = 0.18944699
