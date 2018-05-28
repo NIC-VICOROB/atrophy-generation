@@ -295,7 +295,7 @@ def adhoc_loss(y_true, y_pred) :
     cc = categorical_crossentropy(
         S((y_true - train_mean) / train_std),
         S((y_pred - train_mean) / train_std))
-    return m + 0.01 * cc
+    return m + cc
 
 import numpy as np
 
@@ -305,6 +305,7 @@ from keras.layers.convolutional import Conv3D, MaxPooling3D
 from keras.layers.convolutional import Conv3DTranspose as Deconv3D
 from keras.layers.core import Permute, Reshape
 from keras.layers.merge import add, concatenate
+from keras.layers.normalization import BatchNormalization
 from keras.models import Model
 
 K.set_image_dim_ordering('th')
@@ -344,7 +345,8 @@ def generate_uresnet_model(input_shape, output_shape, num_classes=4, scale=1):
 
 def merge_add(a, b) :
     c = add([a, b])
-    return Activation('relu')(c)
+    c = BatchNormalization(axis=1)(c)
+    return PReLU()(c)
 
 def get_res_conv_core(input, num_filters) :
     a = Conv3D(num_filters, kernel_size=(3, 3, 3), padding='same')(input)
@@ -360,7 +362,7 @@ def get_deconv_layer(input, num_filters) :
 def get_conv_fc(input, num_filters=4) :
     fc = Conv3D(num_filters, kernel_size=(1, 1, 1))(input)
 
-    return Activation('relu')(fc)
+    return PReLU()(fc)
 
 def organise_output(input, output_shape) :
     pred = Reshape((4, 32*32*32))(input)
@@ -370,5 +372,5 @@ def organise_output(input, output_shape) :
 curr_patch_shape = (32, 32, 32)
 S = generate_uresnet_model((1, ) + curr_patch_shape, (np.product(curr_patch_shape), 4))
 S.load_weights('models/ag_segmenter.h5')
-train_mean = 0.23081103
-train_std = 0.18944699
+train_mean = 786.1171
+train_std = 587.41235
