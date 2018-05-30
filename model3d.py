@@ -371,6 +371,6 @@ def organise_output(input, output_shape) :
 
 curr_patch_shape = (32, 32, 32)
 S = generate_uresnet_model((1, ) + curr_patch_shape, (np.product(curr_patch_shape), 4))
-S.load_weights('models/ag_segmenter.h5')
-train_mean = 786.1171
-train_std = 587.41235
+S.load_weights('models/ag_segmenter_o2o1.h5') # 786.1171 587.41235
+train_mean = 790.6143
+train_std = 587.6671
