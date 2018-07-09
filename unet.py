@@ -11,7 +11,7 @@ from keras.models import Model
 
 K.set_image_dim_ordering('th')
 
-def generate_uresnet_model(input_shape, output_shape, scale=1):
+def generate_uresnet_model(input_shape, output_shape, scale=1) :
     input, pred = generate_unet_model(
         input_shape, output_shape[1], scale, True)
     pred = organise_output(pred, output_shape)
