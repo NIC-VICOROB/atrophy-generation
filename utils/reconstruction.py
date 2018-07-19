@@ -16,6 +16,19 @@ def perform_voting(patches, output_shape, expected_shape, extraction_step) :
 
     return np.divide(vote_img, vote_count)
 
+def perform_voting_probabilities(patches, output_shape, expected_shape, extraction_step, num_classes) :
+    vote_img = np.zeros(expected_shape + (num_classes, ))
+
+    coordinates = generate_indexes(
+        output_shape, extraction_step, expected_shape)
+
+    for count, coord in enumerate(coordinates) :
+        selection = [slice(coord[i] - output_shape[i], coord[i]) for i in range(len(coord))]
+        selection += [slice(None)]
+        vote_img[selection] += patches[count]
+
+    return np.argmax(vote_img, axis=3)
+
 def generate_indexes(output_shape, extraction_step, expected_shape) :
     ndims = len(output_shape)
 

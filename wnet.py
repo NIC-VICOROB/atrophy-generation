@@ -2,15 +2,15 @@ import numpy as np
 import tensorflow as tf
 
 from keras import backend as K
-from keras.layers import Input, PReLU
-from keras.layers.convolutional import Conv3D, MaxPooling3D
+from keras.layers import Input, PReLU, Lambda
+from keras.layers.convolutional import Conv3D
 from keras.layers.convolutional import Conv3DTranspose as UpConv3D
-from keras.layers.merge import add
+from keras.layers.merge import add, concatenate, multiply
 from keras.losses import categorical_crossentropy
 from keras.models import Model
 from keras.optimizers import Adam
 
-from unet import generate_unet_model, generate_uresnet_model
+from unet import generate_unet_model, generate_uresnet_model, get_conv_fc, get_core_ele, generate_segnet_model
 
 K.set_image_dim_ordering('th')
 
@@ -21,35 +21,72 @@ def generate_wnet_model(wparams, segparams):
     scale = wparams['scale']
     use_combined_loss = wparams['use_combined_loss']
     patch_shape = wparams['patch_shape']
+    loss_weights = wparams['loss_weights']
 
-    seg_model_filename = segparams['seg_model_filename']
-    seg_model_params_filename = segparams['seg_model_params_filename']
-    segmentation_classes = segparams['segmentation_classes']
+    # seg_model_filename = segparams['seg_model_filename']
+    # seg_model_params_filename = segparams['seg_model_params_filename']
+    # segmentation_classes = segparams['segmentation_classes']
 
-    S, train_mean, train_std = load_segmentation_model(
-        patch_shape, seg_model_filename, seg_model_params_filename, segmentation_classes)
+    # S, train_mean, train_std = load_segmentation_model(
+    #     patch_shape, seg_model_filename, seg_model_params_filename, segmentation_classes)
 
-    f1 = encoder_maker(input_channels, patch_shape, latent_channels, scale)
-    f2 = encoder_maker(latent_channels, patch_shape, output_channels, scale)
-    f = wnet_maker(f1, f2, (input_channels, ) + patch_shape)
+    # f1 = encoder_maker(
+    #     input_channels, patch_shape, latent_channels, scale[0])
+    f2 = decoder_maker(
+        input_channels, patch_shape, output_channels, scale[0], True)
+    f3 = decoder_maker(
+        input_channels, patch_shape, output_channels, scale[1], False)
+    f4 = decoder_maker(
+        2 * output_channels, patch_shape, output_channels, scale[2], True)
     
-    def single_loss(y_true, y_pred) :
-        mask = K.cast(K.not_equal(y_true, 0), 'float32')
+    input_vol = Input(shape=(1, ) + patch_shape)
+    input_csf = Input(shape=(1, ) + patch_shape)
+    # rep_csf = Input(
+    #     tensor=K.repeat_elements(input_csf, latent_channels, axis=1))
+    
+    # f1_out = f1(concatenate([input_vol, input_csf], axis=1))
+    f2_out = f2(concatenate(
+        [multiply([input_vol, Lambda(lambda x:1-x)(input_csf)]), input_csf], axis=1))
+    f3_out = f3(concatenate([multiply([input_vol, input_csf]), input_csf], axis=1))
 
-        return mae(y_true, y_pred * mask)
+    f_out = f4(concatenate([f2_out, f3_out], axis=1))
+    
+    f = Model(inputs=[input_vol, input_csf], outputs=[f2_out, f3_out, f_out])
 
-    def combined_loss(y_true, y_pred) :
-        mask = K.cast(K.not_equal(y_true, 0), 'float32')
+    def mae_loss(y_true, y_pred) :
+        mask = K.batch_flatten(K.cast(K.not_equal(y_true, 0), 'float32'))
+    
+        # return K.sum(mae(y_true, y_pred) * mask, axis=1) / K.sum(mask, axis=1)
+        return mae(y_true, y_pred) * mask
+    
+    def mse_loss(y_true, y_pred) :
+        mask = K.batch_flatten(K.cast(K.not_equal(y_true, 0), 'float32'))
+    
+        # return K.sum(mse(y_true, y_pred) * mask, axis=1) / K.sum(mask, axis=1)
+        return mse(y_true, y_pred) * mask
 
-        l1 = mae(y_true, y_pred * mask)
-        h = categorical_crossentropy(
-            S((y_true - train_mean) / train_std),
-            S(((y_pred * mask) - train_mean) / train_std))
+#     def cc_loss(y_true, y_pred) :
+#         mask = K.cast(K.not_equal(y_true, 0), 'float32')
 
-        return l1 + h
+#         h = categorical_crossentropy(
+#             S((y_true - train_mean) / train_std),
+#             S((y_pred * mask - train_mean) / train_std))
 
-    loss = single_loss if not use_combined_loss else combined_loss
-    f.compile(optimizer='Adam', loss=loss)
+#         return h
+    
+#     def combined_loss(y_true, y_pred) :
+#         mask = K.cast(K.not_equal(y_true, 0), 'float32')
+
+#         l = mae(y_true, y_pred * mask)
+#         h = categorical_crossentropy(
+#             S((y_true - train_mean) / train_std),
+#             S((y_pred * mask - train_mean) / train_std))
+        
+#         return K.sum(l + h, axis=(1))
+
+    loss = [mae_loss, mae_loss, mae_loss]
+    
+    f.compile(optimizer='Adam', loss=loss, loss_weights=loss_weights)
 
     return f
 
@@ -63,14 +100,6 @@ def load_segmentation_model(
     
     return S, train_params['train_mean'], train_params['train_std']
 
-def wnet_maker(f1, f2, input_shape) :
-    input = Input(shape=input_shape)
-
-    f1_out = f1(input)
-    f2_out = f2(f1_out)
-
-    return Model(inputs=[input], outputs=[f2_out])
-
 def encoder_maker(input_channels, patch_shape, output_channels, scale) :
     input_shape = (input_channels, ) + patch_shape
     fc_layer_filters = output_channels
@@ -81,15 +110,22 @@ def encoder_maker(input_channels, patch_shape, output_channels, scale) :
 
     return Model(inputs=[inp], outputs=[pred])
 
-def decoder_maker(input_channels, patch_shape, output_channels, scale) :
+def decoder_maker(input_channels, patch_shape, output_channels, scale, use_skip_connections=True) :
     input_shape = (input_channels, ) + patch_shape
     fc_layer_filters = output_channels
     use_batchnorm = False
 
-    inp, pred = generate_unet_model(
-        input_shape, fc_layer_filters, scale, use_batchnorm)
+    if use_skip_connections :
+        inp, pred = generate_unet_model(
+            input_shape, fc_layer_filters, scale, use_batchnorm)
+    else :
+        inp, pred = generate_segnet_model(
+            input_shape, fc_layer_filters, scale, use_batchnorm)
 
     return Model(inputs=[inp], outputs=[pred])
 
 def mae(y_true, y_pred) :
     return K.abs(K.batch_flatten(y_pred - y_true))
+
+def mse(y_true, y_pred) :
+    return K.pow(K.batch_flatten(y_pred - y_true), 2)
