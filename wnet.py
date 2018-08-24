@@ -23,15 +23,6 @@ def generate_wnet_model(wparams, segparams):
     patch_shape = wparams['patch_shape']
     loss_weights = wparams['loss_weights']
 
-    # seg_model_filename = segparams['seg_model_filename']
-    # seg_model_params_filename = segparams['seg_model_params_filename']
-    # segmentation_classes = segparams['segmentation_classes']
-
-    # S, train_mean, train_std = load_segmentation_model(
-    #     patch_shape, seg_model_filename, seg_model_params_filename, segmentation_classes)
-
-    # f1 = encoder_maker(
-    #     input_channels, patch_shape, latent_channels, scale[0])
     f2 = decoder_maker(
         input_channels, patch_shape, output_channels, scale[0], True)
     f3 = decoder_maker(
@@ -41,10 +32,7 @@ def generate_wnet_model(wparams, segparams):
     
     input_vol = Input(shape=(1, ) + patch_shape)
     input_csf = Input(shape=(1, ) + patch_shape)
-    # rep_csf = Input(
-    #     tensor=K.repeat_elements(input_csf, latent_channels, axis=1))
-    
-    # f1_out = f1(concatenate([input_vol, input_csf], axis=1))
+
     f2_out = f2(concatenate(
         [multiply([input_vol, Lambda(lambda x:1-x)(input_csf)]), input_csf], axis=1))
     f3_out = f3(concatenate([multiply([input_vol, input_csf]), input_csf], axis=1))
@@ -55,50 +43,19 @@ def generate_wnet_model(wparams, segparams):
 
     def mae_loss(y_true, y_pred) :
         mask = K.batch_flatten(K.cast(K.not_equal(y_true, 0), 'float32'))
-    
-        # return K.sum(mae(y_true, y_pred) * mask, axis=1) / K.sum(mask, axis=1)
+
         return mae(y_true, y_pred) * mask
     
     def mse_loss(y_true, y_pred) :
         mask = K.batch_flatten(K.cast(K.not_equal(y_true, 0), 'float32'))
     
-        # return K.sum(mse(y_true, y_pred) * mask, axis=1) / K.sum(mask, axis=1)
         return mse(y_true, y_pred) * mask
-
-#     def cc_loss(y_true, y_pred) :
-#         mask = K.cast(K.not_equal(y_true, 0), 'float32')
-
-#         h = categorical_crossentropy(
-#             S((y_true - train_mean) / train_std),
-#             S((y_pred * mask - train_mean) / train_std))
-
-#         return h
-    
-#     def combined_loss(y_true, y_pred) :
-#         mask = K.cast(K.not_equal(y_true, 0), 'float32')
-
-#         l = mae(y_true, y_pred * mask)
-#         h = categorical_crossentropy(
-#             S((y_true - train_mean) / train_std),
-#             S((y_pred * mask - train_mean) / train_std))
-        
-#         return K.sum(l + h, axis=(1))
 
     loss = [mae_loss, mae_loss, mae_loss]
     
     f.compile(optimizer='Adam', loss=loss, loss_weights=loss_weights)
 
     return f
-
-def load_segmentation_model(
-    patch_shape, seg_model_filename, seg_model_params_filename, segmentation_classes) :
-    input_shape = (1, ) + patch_shape
-    output_shape = (np.product(patch_shape), segmentation_classes)
-    train_params = np.load(seg_model_params_filename).item()
-    S = generate_uresnet_model(input_shape, output_shape)
-    S.load_weights(seg_model_filename)
-    
-    return S, train_params['train_mean'], train_params['train_std']
 
 def encoder_maker(input_channels, patch_shape, output_channels, scale) :
     input_shape = (input_channels, ) + patch_shape
