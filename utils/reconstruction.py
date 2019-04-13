@@ -2,7 +2,7 @@ import itertools
 
 import numpy as np
 
-from scipy.ndimage import spline_filter, gaussian_filter
+from scipy.ndimage import spline_filter
 from scipy.ndimage.morphology import distance_transform_edt
 
 def perform_voting(patches, output_shape, expected_shape, extraction_step, window_sep=(8, 8, 8)) :
@@ -22,7 +22,7 @@ def perform_voting(patches, output_shape, expected_shape, extraction_step, windo
         selection = [slice(coord[i] - output_shape[i], coord[i]) for i in range(len(coord))]
         vote_img[selection] += np.multiply(patches[count], W_dist)
         vote_count[selection] += np.multiply(np.ones(vote_img[selection].shape), W_dist)
-        
+
     vote_count[vote_count == 0] = 1
 
     return spline_filter(np.divide(vote_img, vote_count))
@@ -46,5 +46,5 @@ def generate_indexes(output_shape, extraction_step, expected_shape) :
     poss_shape = [output_shape[i] + extraction_step[i] * ((expected_shape[i] - output_shape[i]) // extraction_step[i]) for i in range(ndims)]
 
     idxs = [range(output_shape[i], poss_shape[i] + 1, extraction_step[i]) for i in range(ndims)]
-    
+
     return itertools.product(*idxs)
