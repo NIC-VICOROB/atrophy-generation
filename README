@@ -1,0 +1,34 @@
+===========================================================
+
+When using this code please cite the paper:
+S. Roy, A. Carass, amnd J.L. Prince, ``Magnetic Resonance Image
+Example-Based Contrast Synthesis'', IEEE Trans. on Medical Imaging,
+32(12):2348-2363, 2013.
+
+http://ieeexplore.ieee.org/xpls/abs_all.jsp?arnumber=6600832
+
+DOI: 10.1109/TMI.2013.2282126
+
+===========================================================
+
+
+If you do not have the Matlab Compiler Runtime v9.0 download it from
+Mathworks:
+https://www.mathworks.com/supportfiles/downloads/R2015b/deployment_files/R2015b/installers/glnxa64/MCR_R2015b_glnxa64_installer.zip
+
+Unzip it and install it. Change the MCRROOT variable inside ``run_hallucination_v13d.sh" to the installed v90 directory
+
+
+
+
+Example usage for regression:
+
+./run_hallucination_v13d.sh testdata/regression/go03_spgr.nii,testdata/regression/go03_mprage.nii testdata/regression/as11_spgr.nii regression 1E5 150 0.01 3x3x3 12 0 0 0 0 testdata/regression/as11_synthmprage.nii 
+
+
+
+
+Example usage for classification (To generate images like Fig 10 in the paper)
+
+./run_hallucination_v13d.sh testdata/regression/go03_spgr.nii,testdata/classification/go03_3classseg.nii testdata/regression/as11_spgr.nii classification 1E5 150 0.01 3x3x3 12 0 0 0 0 testdata/classification/as11_exampleseg.nii 
+

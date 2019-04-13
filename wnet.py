@@ -23,23 +23,33 @@ def generate_wnet_model(wparams, segparams):
     patch_shape = wparams['patch_shape']
     loss_weights = wparams['loss_weights']
 
+    f1 = decoder_maker(
+        input_channels, patch_shape, output_channels, scale[0], True)
     f2 = decoder_maker(
         input_channels, patch_shape, output_channels, scale[0], True)
     f3 = decoder_maker(
-        input_channels, patch_shape, output_channels, scale[1], False)
+        input_channels, patch_shape, output_channels, scale[0], True)
     f4 = decoder_maker(
-        2 * output_channels, patch_shape, output_channels, scale[2], True)
+        output_channels, patch_shape, output_channels, scale[1], True)
     
     input_vol = Input(shape=(1, ) + patch_shape)
-    input_csf = Input(shape=(1, ) + patch_shape)
+    input_prob_1 = Input(shape=(1, ) + patch_shape)
+    input_prob_2 = Input(shape=(1, ) + patch_shape)
+    input_prob_3 = Input(shape=(1, ) + patch_shape)
 
-    f2_out = f2(concatenate(
-        [multiply([input_vol, Lambda(lambda x:1-x)(input_csf)]), input_csf], axis=1))
-    f3_out = f3(concatenate([multiply([input_vol, input_csf]), input_csf], axis=1))
-
-    f_out = f4(concatenate([f2_out, f3_out], axis=1))
+    f1_out = f1(concatenate([input_vol, input_prob_1], axis=1))
+    f2_out = f2(concatenate([input_vol, input_prob_2], axis=1))
+    f3_out = f3(concatenate([input_vol, input_prob_3], axis=1))
     
-    f = Model(inputs=[input_vol, input_csf], outputs=[f2_out, f3_out, f_out])
+    ccat = add([f1_out, f2_out, f3_out])
+    # ccat = concatenate([f1_out, f2_out], axis=1)
+    
+    f_out = f4(ccat)
+    
+    f = Model(inputs=[input_vol, input_prob_1, input_prob_2, input_prob_3],
+              outputs=[f1_out, f2_out, f3_out, ccat, f_out])
+    # f = Model(inputs=[input_vol_1, input_vol_2],
+              # outputs=[f1_out, f2_out, f_out])
 
     def mae_loss(y_true, y_pred) :
         mask = K.batch_flatten(K.cast(K.not_equal(y_true, 0), 'float32'))
@@ -51,7 +61,8 @@ def generate_wnet_model(wparams, segparams):
     
         return mse(y_true, y_pred) * mask
 
-    loss = [mae_loss, mae_loss, mae_loss]
+    loss = [mae_loss, mae_loss, mae_loss, mae_loss, mae_loss]
+    # loss = [mae_loss, mae_loss, mae_loss]
     
     f.compile(optimizer='Adam', loss=loss, loss_weights=loss_weights)
 
