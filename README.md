@@ -1,4 +1,4 @@
-# MR atrophy synthesis using convolutional neural networks via latent space representation
+# Generating controlled atrophy evaluationenvironments on brain MR using convolutionalneural networks and segmentation priors
 
 ## Requirements
 ### Libraries
