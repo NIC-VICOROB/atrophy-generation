@@ -14,7 +14,7 @@ from unet import generate_unet_model, generate_uresnet_model, get_conv_fc, get_c
 
 K.set_image_dim_ordering('th')
 
-def generate_wnet_model(wparams, segparams):
+def generate_wnet_model(wparams):
     input_channels = wparams['input_channels']
     output_channels = wparams['output_channels']
     latent_channels = wparams['latent_channels']
